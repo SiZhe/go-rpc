@@ -1,52 +1,88 @@
 package middlewares
 
 import (
+	"context"
+	"math/rand"
 	"time"
 
 	"go-rpc/middleware"
-	"go-rpc/rpccontext"
 	"google.golang.org/protobuf/proto"
 )
 
-// Retry 重试中间件:调用失败时,按指数退避重试若干次。
+// IdempotentFunc 判定某次调用是否幂等(可安全重试)。返回 false 则不重试。
+type IdempotentFunc func(ctx context.Context) bool
+
+// RetryOptions 重试配置。
+type RetryOptions struct {
+	MaxAttempts int           // 总尝试次数(含首次)
+	BaseDelay   time.Duration // 首次重试前的基础等待,之后指数增长
+	MaxDelay    time.Duration // 退避上限,避免等待过久
+	// Idempotent 判定是否可重试。为 nil 时默认"全部可重试"(教学默认;生产应显式指定)。
+	Idempotent IdempotentFunc
+}
+
+// Retry 重试中间件:失败时按"指数退避 + 随机抖动"重试;仅对幂等调用重试。
 //
-// 【为什么需要重试】
-// 网络抖动、对端瞬时过载导致的失败往往是"暂时的",过一小会儿再试大概率能成功。
-// 重试能显著提升最终成功率,是提升可用性的常用手段。
+// 【修复点 1:jitter 随机抖动(避免重试风暴/惊群)】
+// 纯指数退避下,大量客户端可能在同一时刻一起失败、又在同一时刻一起重试,形成周期性
+// 流量尖峰(惊群)。给每次退避加一个随机抖动,把重试时间打散,削平尖峰。
+// 本实现用 "全抖动(full jitter)":实际等待 = random(0, 指数退避值),AWS 推荐做法之一。
 //
-// 【为什么用"指数退避"而不是立刻重试】
-// 如果失败后立刻猛重试,而对端正因为过载才失败,你的重试反而是火上浇油(重试风暴)。
-// 指数退避让每次重试的等待时间翻倍(如 100ms → 200ms → 400ms),给对端喘息恢复的时间。
+// 【修复点 2:幂等控制(避免重复副作用)】
+// 只有幂等操作(多次执行==一次执行,如查询)才能安全重试。对"扣款/下单"等非幂等操作
+// 盲目重试会导致重复扣款。通过 Idempotent 判定函数,让调用方声明哪些方法可重试。
 //
-// 【重要前提:幂等性(面试必问)】
-// 重试只适合"幂等"操作 —— 即执行多次和执行一次效果相同(如查询)。
-// 对"扣款""下单"这类非幂等操作,盲目重试可能导致重复扣款/重复下单。
-// 生产框架会区分方法是否幂等;本实现为教学默认对所有失败重试,使用时需自行确保幂等。
-//
-// 参数:
-//   - maxAttempts:总尝试次数(含首次)。如 3 表示"首次 + 最多 2 次重试"。
-//   - baseDelay:  首次重试前的等待,之后每次翻倍。
-func Retry(maxAttempts int, baseDelay time.Duration) middleware.Middleware {
-	if maxAttempts < 1 {
-		maxAttempts = 1
+// 【修复点 3:尊重 context 取消】
+// 每次重试等待期间监听 ctx.Done():若整体已超时/被取消,立即停止重试并返回,不做无谓等待。
+func Retry(opts RetryOptions) middleware.Middleware {
+	if opts.MaxAttempts < 1 {
+		opts.MaxAttempts = 1
+	}
+	if opts.MaxDelay <= 0 {
+		opts.MaxDelay = 10 * time.Second
 	}
 	return func(next middleware.Handler) middleware.Handler {
-		return func(c *rpccontext.RpcContext, req proto.Message) (proto.Message, error) {
+		return func(ctx context.Context, req proto.Message) (proto.Message, error) {
+			// 非幂等则不重试,只调一次。
+			if opts.Idempotent != nil && !opts.Idempotent(ctx) {
+				return next(ctx, req)
+			}
+
 			var lastErr error
-			delay := baseDelay
-			for attempt := 1; attempt <= maxAttempts; attempt++ {
-				resp, err := next(c, req)
+			backoff := opts.BaseDelay
+			for attempt := 1; attempt <= opts.MaxAttempts; attempt++ {
+				resp, err := next(ctx, req)
 				if err == nil {
-					return resp, nil // 成功,立即返回
+					return resp, nil
 				}
 				lastErr = err
-				// 最后一次失败就不再等待,直接跳出返回错误。
-				if attempt < maxAttempts {
-					time.Sleep(delay)
-					delay *= 2 // 指数退避:等待时间翻倍
+				if attempt == opts.MaxAttempts {
+					break // 最后一次,不再等待
 				}
+
+				// 计算本次退避(带上限),再取全抖动:random(0, backoff)。
+				if backoff > opts.MaxDelay {
+					backoff = opts.MaxDelay
+				}
+				sleep := time.Duration(rand.Int63n(int64(backoff) + 1))
+
+				// 等待期间尊重 ctx 取消/超时。
+				select {
+				case <-time.After(sleep):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				backoff *= 2 // 指数增长
 			}
-			return nil, lastErr // 用尽次数,返回最后一次的错误
+			return nil, lastErr
 		}
 	}
 }
+
+// 说明:如需按方法名判定幂等,可这样写 Idempotent:
+//   func(ctx context.Context) bool {
+//       switch rpccontext.Method(ctx) {
+//       case "Get", "Query", "List": return true
+//       default: return false
+//       }
+//   }

@@ -3,9 +3,20 @@
 一个用 **Go 实现的客户端治理 SDK**,为 C++ RPC 框架 [MPRPC](../MPRPC) 提供
 微服务治理与可观测能力。设计理念参考 B 站 go-common / kratos。
 
-> C++ MPRPC 负责高性能 RPC 服务端内核(muduo + Protobuf + ZooKeeper);
+> C++ MPRPC 负责高性能 RPC 服务端内核(muduo + Protobuf + ZooKeeper),源码在 `cppserver/`;
 > go-rpc 作为客户端,通过 MPRPC 的 wire protocol(Protobuf over TCP)远程调用它,
 > 并在调用链路上叠加超时、重试、熔断、限流、负载均衡、链路追踪、指标、日志等能力。
+
+## 工程亮点(相比教学玩具的进阶点)
+
+- **基于标准 `context.Context` 的取消/超时传播**:超时中间件用 `context.WithTimeout`
+  派生 ctx,信号透传到 transport 的 `DialContext` 与 socket deadline,能真正打断阻塞的
+  网络 IO,不泄漏 goroutine。
+- **连接池**:长连接复用(带失效探测 `isAlive` + 上限),避免每次调用重复三次握手。
+- **per-node 熔断 + 负载均衡联动**:每个节点独立熔断器,故障节点被 `NodeFilter` 从选址
+  候选中摘除,健康节点继续服务(而非服务级"一刀切"熔断)。
+- **重试的 full jitter + 幂等控制**:退避加随机抖动削平重试尖峰;仅对幂等方法重试,
+  避免非幂等操作(如扣款)重复副作用;重试等待期间尊重 ctx 取消。
 
 ## 快速开始
 
@@ -43,8 +54,10 @@ go run ./example   # 跑完整 demo:组装所有中间件,发起真实 TCP 调�
 | `trace/` | TraceID/SpanID 生成 | 分布式追踪、跨进程透传 |
 | `metric/` | 指标聚合(QPS/耗时/错误率) | 并发安全聚合 |
 | `log/` | 结构化异步日志 | 异步日志、TraceID 关联 |
-| `middlewares/` | 把上述能力包成可挂载的中间件 | 引擎 vs 挂件分离 |
-| `example/` | 组装全部能力的完整 demo | — |
+| `middlewares/` | 把上述能力包成可挂载的中间件(含 per-node 熔断 nodebreaker) | 引擎 vs 挂件分离 |
+| `transport/pool.go` | 连接池(长连接复用 + 失效探测) | 连接复用、TCP 保活 |
+| `example/` | 组装全部能力的完整 demo(演示熔断摘点) | — |
+| `cppserver/` | C++ MPRPC 服务端内核源码(原 MPRPC 项目) | RPC 序列化/注册发现/网络模型 |
 
 ## 一次调用的完整链路(数据流)
 

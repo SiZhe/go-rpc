@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"net"
 	"testing"
 
@@ -11,11 +12,10 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-// startFakeMPRPCServer 起一个模拟 C++ MPRPC 服务端的 TCP server:
-// 收到任意请求后,回写一个 StringValue("pong") 的 protobuf,然后关闭连接(短连接)。
+// startFakeMPRPCServer 起一个模拟 C++ MPRPC 服务端:收到请求后回 "pong" 的 protobuf,短连接关闭。
 func startFakeMPRPCServer(t *testing.T) (addr string, stop func()) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0") // 0 = 系统分配空闲端口
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func startFakeMPRPCServer(t *testing.T) (addr string, stop func()) {
 			resp := wrapperspb.String("pong")
 			b, _ := proto.Marshal(resp)
 			_, _ = conn.Write(b)
-			_ = conn.Close() // 短连接:发完即关,客户端读到 EOF
+			_ = conn.Close()
 		}
 	}()
 	return ln.Addr().String(), func() { _ = ln.Close() }
@@ -44,13 +44,15 @@ func TestTCPTransportSendReceive(t *testing.T) {
 		"UserServiceRpc/Login": {addr},
 	})
 	tr := NewTCPTransport(reg, balancer.NewRoundRobin())
+	defer tr.Close()
 
-	frame, err := EncodeRequest("UserServiceRpc", "Login", []byte("req"), "trace-x")
+	frame, err := EncodeRequest("UserServiceRpc", "Login", []byte("req"), "trace-x", 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	respBytes, err := tr.Send(rpccontext.New("UserServiceRpc", "Login"), frame)
+	ctx := rpccontext.New(context.Background(), "UserServiceRpc", "Login")
+	respBytes, err := tr.Send(ctx, frame)
 	if err != nil {
 		t.Fatal(err)
 	}

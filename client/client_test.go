@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"testing"
 
 	"go-rpc/middleware"
@@ -12,22 +13,22 @@ import (
 func TestClientCallInvokesMiddlewareAndRoundTrip(t *testing.T) {
 	var mwHit bool
 	mw := func(next middleware.Handler) middleware.Handler {
-		return func(c *rpccontext.RpcContext, req proto.Message) (proto.Message, error) {
+		return func(ctx context.Context, req proto.Message) (proto.Message, error) {
 			mwHit = true
-			return next(c, req)
+			return next(ctx, req)
 		}
 	}
-	// 假 transport:回显一个 StringValue 响应
-	rt := func(c *rpccontext.RpcContext, frame []byte) ([]byte, error) {
-		resp := wrapperspb.String("ok:" + c.Method)
+	// 假 transport:回显一个 StringValue 响应,内容带上方法名验证 ctx 透传。
+	rt := func(ctx context.Context, frame []byte) ([]byte, error) {
+		resp := wrapperspb.String("ok:" + rpccontext.Method(ctx))
 		return proto.Marshal(resp)
 	}
 	cli := New(rt, mw)
 
 	req := wrapperspb.String("ping")
 	var resp wrapperspb.StringValue
-	err := cli.Call(rpccontext.New("UserServiceRpc", "Login"), req, &resp)
-	if err != nil {
+	ctx := rpccontext.New(context.Background(), "UserServiceRpc", "Login")
+	if err := cli.Call(ctx, req, &resp); err != nil {
 		t.Fatal(err)
 	}
 	if !mwHit {

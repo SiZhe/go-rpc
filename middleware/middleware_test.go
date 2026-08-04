@@ -1,9 +1,9 @@
 package middleware
 
 import (
+	"context"
 	"testing"
 
-	"go-rpc/rpccontext"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -12,20 +12,20 @@ func TestChainOnionOrder(t *testing.T) {
 	var order []string
 	mk := func(name string) Middleware {
 		return func(next Handler) Handler {
-			return func(c *rpccontext.RpcContext, req proto.Message) (proto.Message, error) {
+			return func(ctx context.Context, req proto.Message) (proto.Message, error) {
 				order = append(order, name+"-before")
-				resp, err := next(c, req)
+				resp, err := next(ctx, req)
 				order = append(order, name+"-after")
 				return resp, err
 			}
 		}
 	}
-	final := func(c *rpccontext.RpcContext, req proto.Message) (proto.Message, error) {
+	final := func(ctx context.Context, req proto.Message) (proto.Message, error) {
 		order = append(order, "handler")
 		return nil, nil
 	}
 	h := Chain(mk("mw1"), mk("mw2"))(final)
-	_, _ = h(rpccontext.New("S", "M"), nil)
+	_, _ = h(context.Background(), nil)
 
 	want := []string{"mw1-before", "mw2-before", "handler", "mw2-after", "mw1-after"}
 	if len(order) != len(want) {

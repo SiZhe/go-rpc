@@ -1,29 +1,27 @@
 package middlewares
 
 import (
+	"context"
+
 	"go-rpc/breaker"
 	"go-rpc/middleware"
-	"go-rpc/rpccontext"
 	"google.golang.org/protobuf/proto"
 )
 
-// Breaker 熔断中间件:把 breaker.Breaker 挂到调用链上。
+// Breaker 熔断中间件:把一个"全局"熔断器挂到调用链上(对整个服务粒度熔断)。
 //
-// 【一次调用的流程】
-//  1. 先问熔断器 Allow():不放行(熔断中)→ 直接返回 ErrOpen,快速失败,不打下游。
-//  2. 放行 → 执行 next(真正调用)。
-//  3. 把结果(成功/失败)Report 给熔断器,用于更新滑动窗口和状态。
-//
-// 【设计要点】熔断器实例由外部传入,因此可以做到"每个服务/方法一个熔断器"
-// (不同下游的健康度互相独立),这也是生产做法。
+// 【与 per-node 熔断的区别】
+// 本中间件是"服务级"熔断:不区分是哪个节点失败,整体错误率超阈值就熔断。
+// 若要"按节点"熔断并配合负载均衡摘除故障节点,见 nodebreaker.go(修复4)。
+// 两者可按需选用;通常 per-node 更精细。
 func Breaker(b *breaker.Breaker) middleware.Middleware {
 	return func(next middleware.Handler) middleware.Handler {
-		return func(c *rpccontext.RpcContext, req proto.Message) (proto.Message, error) {
+		return func(ctx context.Context, req proto.Message) (proto.Message, error) {
 			if !b.Allow() {
-				return nil, breaker.ErrOpen // 快速失败
+				return nil, breaker.ErrOpen // 快速失败,不打下游
 			}
-			resp, err := next(c, req)
-			b.Report(err == nil) // 上报结果
+			resp, err := next(ctx, req)
+			b.Report(err == nil)
 			return resp, err
 		}
 	}
