@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package mprpc;
+
+message RpcHeader{
+    bytes service_name = 1;
+    bytes method_name = 2;
+    uint32 args_size = 3;
+    // 以下为 go-rpc 治理 SDK 新增字段,用于跨进程/跨语言透传:
+    string trace_id = 4;               // 链路追踪 ID,服务端应打进日志以串联链路
+    int64 deadline_ms = 5;             // 调用截止时间(unix 毫秒),服务端可据此提前放弃
+    map<string, string> metadata = 6;  // 透传元数据(如染色标、灰度标记)
+}

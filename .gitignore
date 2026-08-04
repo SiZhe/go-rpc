@@ -1,1 +1,7 @@
 *.log
+# C++ build artifacts
+cppserver/build/
+cppserver/lib/*.a
+cppserver/bin/Provider
+cppserver/bin/Consumer
+*.o

@@ -1,0 +1,8 @@
+syntax = "proto3"; // 声明版本
+
+package fixbug; // 声明了代码所在的包
+
+message LoginRequest{
+    string nama = 1;
+    string pwd = 2;
+}
