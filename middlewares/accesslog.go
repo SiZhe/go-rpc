@@ -25,6 +25,10 @@ func AccessLog(l *log.Logger) middleware.Middleware {
 				"service": rpccontext.Service(ctx),
 				"method":  rpccontext.Method(ctx),
 				"cost":    cost.String(),
+				"span":    rpccontext.SpanID(ctx),
+			}
+			if p := rpccontext.ParentSpanID(ctx); p != "" {
+				fields["parent"] = p
 			}
 			traceID := rpccontext.TraceID(ctx)
 			if err != nil {

@@ -8,16 +8,18 @@ import (
 )
 
 // EncodeRequest 按 MPRPC wire 格式组包:[4B 小端 header_size][RpcHeader][args]。
-// args 为调用方已序列化好的请求体。traceID / deadlineMs / metadata 允许为零值。
-// deadlineMs 为 0 表示无超时;metadata 为 nil 表示无透传元数据。
-func EncodeRequest(service, method string, args []byte, traceID string, deadlineMs int64, metadata map[string]string) ([]byte, error) {
+// args 为调用方已序列化好的请求体。traceID / spanID / parentSpanID / deadlineMs /
+// metadata 允许为零值。deadlineMs 为 0 表示无超时;metadata 为 nil 表示无透传元数据。
+func EncodeRequest(service, method string, args []byte, traceID, spanID, parentSpanID string, deadlineMs int64, metadata map[string]string) ([]byte, error) {
 	header := &pb.RpcHeader{
-		ServiceName: []byte(service),
-		MethodName:  []byte(method),
-		ArgsSize:    uint32(len(args)),
-		TraceId:     traceID,
-		DeadlineMs:  deadlineMs,
-		Metadata:    metadata,
+		ServiceName:  []byte(service),
+		MethodName:   []byte(method),
+		ArgsSize:     uint32(len(args)),
+		TraceId:      traceID,
+		SpanId:       spanID,
+		ParentSpanId: parentSpanID,
+		DeadlineMs:   deadlineMs,
+		Metadata:     metadata,
 	}
 	headerBytes, err := proto.Marshal(header)
 	if err != nil {

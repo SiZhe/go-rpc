@@ -46,7 +46,7 @@ func TestTCPTransportSendReceive(t *testing.T) {
 	tr := NewTCPTransport(reg, balancer.NewRoundRobin())
 	defer tr.Close()
 
-	frame, err := EncodeRequest("UserServiceRpc", "Login", []byte("req"), "trace-x", 0, nil)
+	frame, err := EncodeRequest("UserServiceRpc", "Login", []byte("req"), "trace-x", "span-x", "", 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"go-rpc/middleware"
 	"go-rpc/rpccontext"
 	"go-rpc/transport"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -39,7 +40,8 @@ func (cli *Client) Call(ctx context.Context, req, resp proto.Message) error {
 		}
 		frame, err := transport.EncodeRequest(
 			rpccontext.Service(ctx), rpccontext.Method(ctx), args,
-			rpccontext.TraceID(ctx), deadlineMs, rpccontext.Metadata(ctx),
+			rpccontext.TraceID(ctx), rpccontext.SpanID(ctx), rpccontext.ParentSpanID(ctx),
+			deadlineMs, rpccontext.Metadata(ctx),
 		)
 		if err != nil {
 			return nil, err

@@ -29,6 +29,8 @@ type RpcHeader struct {
 	TraceId       string                 `protobuf:"bytes,4,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
 	DeadlineMs    int64                  `protobuf:"varint,5,opt,name=deadline_ms,json=deadlineMs,proto3" json:"deadline_ms,omitempty"`
 	Metadata      map[string]string      `protobuf:"bytes,6,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SpanId        string                 `protobuf:"bytes,7,opt,name=span_id,json=spanId,proto3" json:"span_id,omitempty"`                     // 本跳 span 的 ID,每次跨进程调用新生成
+	ParentSpanId  string                 `protobuf:"bytes,8,opt,name=parent_span_id,json=parentSpanId,proto3" json:"parent_span_id,omitempty"` // 上游 span 的 ID,用于还原调用树(根 span 为空)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -105,11 +107,25 @@ func (x *RpcHeader) GetMetadata() map[string]string {
 	return nil
 }
 
+func (x *RpcHeader) GetSpanId() string {
+	if x != nil {
+		return x.SpanId
+	}
+	return ""
+}
+
+func (x *RpcHeader) GetParentSpanId() string {
+	if x != nil {
+		return x.ParentSpanId
+	}
+	return ""
+}
+
 var File_proto_rpcheader_proto protoreflect.FileDescriptor
 
 const file_proto_rpcheader_proto_rawDesc = "" +
 	"\n" +
-	"\x15proto/rpcheader.proto\x12\x05mprpc\"\xa1\x02\n" +
+	"\x15proto/rpcheader.proto\x12\x05mprpc\"\xe0\x02\n" +
 	"\tRpcHeader\x12!\n" +
 	"\fservice_name\x18\x01 \x01(\fR\vserviceName\x12\x1f\n" +
 	"\vmethod_name\x18\x02 \x01(\fR\n" +
@@ -118,7 +134,9 @@ const file_proto_rpcheader_proto_rawDesc = "" +
 	"\btrace_id\x18\x04 \x01(\tR\atraceId\x12\x1f\n" +
 	"\vdeadline_ms\x18\x05 \x01(\x03R\n" +
 	"deadlineMs\x12:\n" +
-	"\bmetadata\x18\x06 \x03(\v2\x1e.mprpc.RpcHeader.MetadataEntryR\bmetadata\x1a;\n" +
+	"\bmetadata\x18\x06 \x03(\v2\x1e.mprpc.RpcHeader.MetadataEntryR\bmetadata\x12\x17\n" +
+	"\aspan_id\x18\a \x01(\tR\x06spanId\x12$\n" +
+	"\x0eparent_span_id\x18\b \x01(\tR\fparentSpanId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x14Z\x12go-rpc/proto;protob\x06proto3"

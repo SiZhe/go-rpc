@@ -9,4 +9,6 @@ message RpcHeader {
     string trace_id = 4;
     int64 deadline_ms = 5;
     map<string, string> metadata = 6;
+    string span_id = 7;         // 本跳 span 的 ID,每次跨进程调用新生成
+    string parent_span_id = 8;  // 上游 span 的 ID,用于还原调用树(根 span 为空)
 }

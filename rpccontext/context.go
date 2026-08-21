@@ -3,11 +3,11 @@
 // 【为什么用标准 context.Context(而不是自造结构体)】
 // Go 的 context.Context 是整个生态处理"取消 / 超时 / 请求级数据传递"的标准方式。
 // 用它有两个关键好处:
-//   1. 取消传播:超时中间件用 context.WithTimeout 派生带截止时间的 ctx,一旦超时,
-//      ctx.Done() 会被关闭。下层(net 包的 DialContext / Read)只要监听这个信号,
-//      就能"立刻停下正在进行的网络操作",而不是傻等 —— 这才是真正的超时,不会泄漏
-//      goroutine。这是自造 RpcContext 做不到的(之前版本的缺陷)。
-//   2. 生态兼容:database/sql、net、grpc 等所有库都接受 context.Context,天然打通。
+//  1. 取消传播:超时中间件用 context.WithTimeout 派生带截止时间的 ctx,一旦超时,
+//     ctx.Done() 会被关闭。下层(net 包的 DialContext / Read)只要监听这个信号,
+//     就能"立刻停下正在进行的网络操作",而不是傻等 —— 这才是真正的超时,不会泄漏
+//     goroutine。这是自造 RpcContext 做不到的(之前版本的缺陷)。
+//  2. 生态兼容:database/sql、net、grpc 等所有库都接受 context.Context,天然打通。
 //
 // 【元信息怎么存】
 // RPC 的路由信息(service/method)、TraceID、metadata 不适合塞进函数参数一路传递,
@@ -20,10 +20,14 @@ import "context"
 // meta 是挂在 context 上的 RPC 元信息。用私有类型 + 私有 key,避免与其它包的
 // context value 冲突(context 官方推荐做法:key 用自定义私有类型)。
 type meta struct {
-	service  string
-	method   string
-	traceID  string
-	metadata map[string]string
+	service string
+	method  string
+	traceID string
+	// spanID 本跳 span 的 ID;parentSpanID 上游 span 的 ID(根 span 为空)。
+	// 二者与 traceID 一起还原调用树:同一 traceID 下,靠 parent→span 的指向串成树。
+	spanID       string
+	parentSpanID string
+	metadata     map[string]string
 	// selectedAddr 记录本次调用负载均衡选中的节点地址。由 transport 写入,
 	// per-node 熔断中间件读取它来按节点上报成败。见 middlewares/nodebreaker.go。
 	selectedAddr string
@@ -61,11 +65,19 @@ func TraceID(ctx context.Context) string { return fromCtx(ctx).traceID }
 // 同一条 ctx 链上的读取都能看到)。由 trace 中间件调用。
 func SetTraceID(ctx context.Context, id string) { fromCtx(ctx).traceID = id }
 
+// SpanID / ParentSpanID 读取本跳与上游 span 的 ID。
+func SpanID(ctx context.Context) string       { return fromCtx(ctx).spanID }
+func ParentSpanID(ctx context.Context) string { return fromCtx(ctx).parentSpanID }
+
+// SetSpanID / SetParentSpanID 由 trace 中间件写入。
+func SetSpanID(ctx context.Context, id string)       { fromCtx(ctx).spanID = id }
+func SetParentSpanID(ctx context.Context, id string) { fromCtx(ctx).parentSpanID = id }
+
 // SetMeta / Meta 读写透传元数据。
-func SetMeta(ctx context.Context, k, v string) { fromCtx(ctx).metadata[k] = v }
-func Meta(ctx context.Context, k string) string { return fromCtx(ctx).metadata[k] }
+func SetMeta(ctx context.Context, k, v string)       { fromCtx(ctx).metadata[k] = v }
+func Meta(ctx context.Context, k string) string      { return fromCtx(ctx).metadata[k] }
 func Metadata(ctx context.Context) map[string]string { return fromCtx(ctx).metadata }
 
 // SelectedAddr / SetSelectedAddr 读写本次调用选中的节点地址(transport 写、熔断中间件读)。
-func SelectedAddr(ctx context.Context) string       { return fromCtx(ctx).selectedAddr }
+func SelectedAddr(ctx context.Context) string          { return fromCtx(ctx).selectedAddr }
 func SetSelectedAddr(ctx context.Context, addr string) { fromCtx(ctx).selectedAddr = addr }

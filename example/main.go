@@ -4,12 +4,14 @@
 // 运行:cd go-rpc && go run ./example
 //
 // 【中间件顺序(洋葱从外到内)】
-//   Trace → AccessLog → Metric → RateLimit → Retry → NodeBreaker.Middleware → Timeout → 真正调用
-//   - Trace 最外:先生成 TraceID,后续都能用。
-//   - RateLimit / 熔断靠外:尽早拦截。
-//   - Retry 在熔断内侧:重试的失败也计入熔断。
-//   - NodeBreaker.Middleware 需在 transport 选好节点后上报,故靠内。
-//   - Timeout 最内:用 context.WithTimeout 派生 ctx,取消信号透传到网络层。
+//
+//	Trace → AccessLog → Metric → RateLimit → Retry → NodeBreaker.Middleware → Timeout → 真正调用
+//	- Trace 最外:先生成 TraceID,后续都能用。
+//	- RateLimit / 熔断靠外:尽早拦截。
+//	- Retry 在熔断内侧:重试的失败也计入熔断。
+//	- NodeBreaker.Middleware 需在 transport 选好节点后上报,故靠内。
+//	- Timeout 最内:用 context.WithTimeout 派生 ctx,取消信号透传到网络层。
+//
 // 节点摘除由 NodeBreaker.Filter 在 transport 选址前完成(不在洋葱链上)。
 package main
 
@@ -83,7 +85,7 @@ func main() {
 			MaxDelay: 200 * time.Millisecond, Idempotent: idempotent,
 		}),
 		nodeBreaker.Middleware(),
-		middlewares.Timeout(2*time.Second),
+		middlewares.Timeout(500*time.Millisecond),
 	)
 
 	// ── 4. 发起多次调用:轮询会交替打到 good/bad,bad 连续失败后被摘除 ──

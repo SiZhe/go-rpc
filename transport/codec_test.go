@@ -10,7 +10,7 @@ import (
 
 func TestEncodeRequestLayout(t *testing.T) {
 	args := []byte("hello-args")
-	frame, err := EncodeRequest("UserServiceRpc", "Login", args, "trace-123", 0, nil)
+	frame, err := EncodeRequest("UserServiceRpc", "Login", args, "trace-123", "span-1", "parent-0", 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +24,9 @@ func TestEncodeRequestLayout(t *testing.T) {
 	}
 	if h.TraceId != "trace-123" {
 		t.Fatalf("trace = %s", h.TraceId)
+	}
+	if h.SpanId != "span-1" || h.ParentSpanId != "parent-0" {
+		t.Fatalf("span/parent = %s/%s", h.SpanId, h.ParentSpanId)
 	}
 	if int(h.ArgsSize) != len(args) {
 		t.Fatalf("args_size = %d, want %d", h.ArgsSize, len(args))
